@@ -1,15 +1,4 @@
-#include <unistd.h>
-#include <termios.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <stdio.h>
-#include <errno.h>
-
-void enable_raw_mode();
-void disable_raw_mode();
-void die(const char *s);
-
-struct termios orig_termios;
+#include "te.h"
 
 void enable_raw_mode() {
     // reads terminal attributes into raw
@@ -83,7 +72,7 @@ int main() {
             printf("%d ('%c')\r\n", c, c);
         }
 
-        if(c == 'q') {
+        if(c == CTRL_KEY('q')) {
             break;
         }
     }
