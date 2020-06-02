@@ -1,15 +1,106 @@
 #include "te.h"
 
+// append buffer
+
+void ab_append(append_buffer * ab, const char * s, int len) {
+    if(ab->b == NULL) {
+        
+    }
+    char * new = (char *)malloc(ab->len + len);
+
+    if(new == NULL) {
+        return;
+    }
+    memcpy(&new[ab->len], s, len);
+    ab->b = new;
+    ab->len += len;
+}
+
+void ab_free(append_buffer * ab) {
+    free(ab->b);
+}
+
+// input
+
+void editor_process_keypress() {
+    char c = editor_read_key();
+
+    switch(c) {
+        case CTRL_KEY('q'):
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
+            exit(0);
+            break;
+    }
+}
+
+// output
+
+void editor_refresh_screen() {
+    append_buffer ab = ABUF_INIT;
+
+    ab_append(&ab, "\x1b[2J", 4);
+    ab_append(&ab, "\x1b[H", 3);
+
+    editor_draw_rows();
+
+    ab_append(&ab, "\x1b[H", 3);
+
+    write(STDOUT_FILENO, ab.b, ab.len);
+    ab_free(&ab);
+}
+
+void editor_draw_rows(append_buffer * ab) {
+    int y;
+    for(y = 0; y < E.screen_rows; y++) {
+        ab_append(ab, "~", 1);
+
+        if(y < E.screen_rows - 1) {
+            ab_append(ab, "\r\n", 2);
+        }
+    }
+}
+
+// terminal
+
+int get_window_size(int * rows, int * cols) {
+    struct winsize ws;
+
+    if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+        if(write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) {
+            return -1;
+        }
+        editor_read_key();
+        return -1;
+    }
+    else {
+        *cols = ws.ws_col;
+        *rows = ws.ws_row;
+        return 0;
+    }
+}
+
+char editor_read_key() {
+    int nread;
+    char c;
+    while((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+        if(nread == -1 && errno != EAGAIN) {
+            die("read");
+        }
+    }
+    return c;
+}
+
 void enable_raw_mode() {
     // reads terminal attributes into raw
-    if(tcgetattr(STDIN_FILENO, &orig_termios) == -1) {
+    if(tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) {
         die("tcgetattr");
     }
     
     // automatically call disable_raw_mode when the program exits
     atexit(disable_raw_mode);
 
-    struct termios raw = orig_termios;
+    struct termios raw = E.orig_termios;
 
     // local flags
     // ECHO - turn off echoing
@@ -44,37 +135,35 @@ void enable_raw_mode() {
 }
 
 void disable_raw_mode() {
-    if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1) {
+    if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) {
         die("tcsetattr");
     }
 }
 
 void die(const char *s) {
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
     perror(s);
     exit(1);
 }
 
+// initialization
+
+void init_editor() {
+    if(get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
+        die("get_window_size");
+    }
+}
+
 int main() {
     enable_raw_mode();
+    init_editor();
 
     // reads user input until a q is seen
     while(1) {
-        char c = '\0';
-        if(read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
-            die("read");
-        }
-        
-        // checks if a character is a control character
-        if(iscntrl(c)) {
-            printf("%d\r\n", c);
-        }
-        else {
-            printf("%d ('%c')\r\n", c, c);
-        }
-
-        if(c == CTRL_KEY('q')) {
-            break;
-        }
+        editor_refresh_screen();
+        editor_process_keypress();
     }
 
     return 0;
