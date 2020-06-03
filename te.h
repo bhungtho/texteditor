@@ -13,6 +13,19 @@
 #define CTRL_KEY(k) ((k) & 0x1f)    // strips top three bits
 #define ABUF_INIT {NULL, 0}         // append_buffer constructor
 
+// enums
+enum editorKey {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    DEL_KEY,
+    HOME_KEY,
+    END_KEY,
+    PAGE_UP,
+    PAGE_DOWN
+};
+
 // structure definitions
 typedef struct editor_config {
     int cx;
@@ -37,7 +50,7 @@ void ab_append(append_buffer * ab, const char * s, int len);
 void ab_free(append_buffer * ab);
 
 // terminal
-char editor_read_key();         // wait for a keypress and return it
+int editor_read_key();         // wait for a keypress and return it
 void enable_raw_mode();         // enable "raw-mode"
 void disable_raw_mode();        // disable "raw-mode"
 void die(const char *s);        // error function
@@ -48,7 +61,7 @@ void editor_refresh_screen();
 void editor_draw_rows();
 
 // input
-void editor_move_cursor(char key);
+void editor_move_cursor(int key);
 void editor_process_keypress(); // wait for a keypress and handle it
 
 // init
