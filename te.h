@@ -9,11 +9,14 @@
 #include <string.h>
 
 //defines
+#define VERSION "0.0.1"
 #define CTRL_KEY(k) ((k) & 0x1f)    // strips top three bits
 #define ABUF_INIT {NULL, 0}         // append_buffer constructor
 
 // structure definitions
 typedef struct editor_config {
+    int cx;
+    int cy;
     int screen_rows;
     int screen_cols;
     struct termios orig_termios;
@@ -45,6 +48,7 @@ void editor_refresh_screen();
 void editor_draw_rows();
 
 // input
+void editor_move_cursor(char key);
 void editor_process_keypress(); // wait for a keypress and handle it
 
 // init

@@ -3,10 +3,7 @@
 // append buffer
 
 void ab_append(append_buffer * ab, const char * s, int len) {
-    if(ab->b == NULL) {
-        
-    }
-    char * new = (char *)malloc(ab->len + len);
+    char * new = realloc(ab->b, ab->len + len);
 
     if(new == NULL) {
         return;
@@ -22,6 +19,23 @@ void ab_free(append_buffer * ab) {
 
 // input
 
+void editor_move_cursor(char key) {
+    switch(key) {
+        case 'a':
+            E.cx--;
+            break;
+        case 'd':
+            E.cx++;
+            break;
+        case 'w':
+            E.cy--;
+            break;
+        case 's':
+            E.cy++;
+            break;
+    }
+}
+
 void editor_process_keypress() {
     char c = editor_read_key();
 
@@ -31,6 +45,12 @@ void editor_process_keypress() {
             write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
             break;
+        case 'w':
+        case 's':
+        case 'a':
+        case 'd':
+            editor_move_cursor(c);
+            break;
     }
 }
 
@@ -39,12 +59,22 @@ void editor_process_keypress() {
 void editor_refresh_screen() {
     append_buffer ab = ABUF_INIT;
 
-    ab_append(&ab, "\x1b[2J", 4);
+    // hide cursor
+    ab_append(&ab, "\x1b[?25l", 6);
+    //ab_append(&ab, "\x1b[2J", 4);
     ab_append(&ab, "\x1b[H", 3);
 
-    editor_draw_rows();
+    editor_draw_rows(&ab);
 
-    ab_append(&ab, "\x1b[H", 3);
+    // move cursor to (cx, cy)
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    ab_append(&ab, buf, strlen(buf));
+
+    //ab_append(&ab, "\x1b[H", 3);
+    
+    // show cursor
+    ab_append(&ab, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, ab.b, ab.len);
     ab_free(&ab);
@@ -53,8 +83,28 @@ void editor_refresh_screen() {
 void editor_draw_rows(append_buffer * ab) {
     int y;
     for(y = 0; y < E.screen_rows; y++) {
-        ab_append(ab, "~", 1);
+        if(y == E.screen_rows / 3) {
+            char welcome[80];
+            int welcome_len = snprintf(welcome, sizeof(welcome), "Ben's TE -- version %s", VERSION);
+            // truncate if too long
+            if(welcome_len > E.screen_cols) {
+                welcome_len = E.screen_cols;
+            }
+            int padding = (E.screen_cols - welcome_len) / 2;
+            if(padding) {
+                ab_append(ab, "~", 1);
+                padding--;
+            } 
+            while(padding--) {
+                ab_append(ab, " ", 1);
+            }
+            ab_append(ab, welcome, welcome_len);
+        }
+        else {
+            ab_append(ab, "~", 1);
+        }
 
+        ab_append(ab, "\x1b[K", 3);
         if(y < E.screen_rows - 1) {
             ab_append(ab, "\r\n", 2);
         }
@@ -151,6 +201,8 @@ void die(const char *s) {
 // initialization
 
 void init_editor() {
+    E.cx = 0;
+    E.cy = 0;
     if(get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
         die("get_window_size");
     }
