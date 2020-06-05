@@ -27,9 +27,7 @@ void editor_move_cursor(int key) {
             }
             break;
         case ARROW_RIGHT:
-            if(E.cx != E.screen_cols - 1) {
                 E.cx++;
-            }
             break;
         case ARROW_UP:
             if(E.cy != 0) {
@@ -37,7 +35,7 @@ void editor_move_cursor(int key) {
             }
             break;
         case ARROW_DOWN:
-            if(E.cy != E.screen_rows - 1) {
+            if(E.cy < E.num_rows) {
                 E.cy++;
             }
             break;
@@ -79,7 +77,28 @@ void editor_process_keypress() {
 
 // output
 
+void editor_scroll() {
+    // if cursor above visible window
+    if(E.cy < E.row_offset) {
+        E.row_offset = E.cy;
+    }
+    // if cursor below visible window
+    if(E.cy >= E.row_offset + E.screen_rows) {
+        E.row_offset = E.cy - E.screen_rows + 1;
+    }
+
+    // if cursor left of visible window
+    if(E.cx < E.col_offset) {
+        E.col_offset = E.cx;
+    }
+    // if cursor right of visible window
+    if(E.cx >= E.col_offset + E.screen_cols) {
+        E.col_offset = E.cx - E.screen_cols + 1;
+    }
+}
+
 void editor_refresh_screen() {
+    editor_scroll();
     append_buffer ab = ABUF_INIT;
 
     // hide cursor
@@ -91,7 +110,7 @@ void editor_refresh_screen() {
 
     // move cursor to (cx, cy)
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.row_offset + 1, E.cx - E.col_offset + 1);
     ab_append(&ab, buf, strlen(buf));
 
     //ab_append(&ab, "\x1b[H", 3);
@@ -106,25 +125,41 @@ void editor_refresh_screen() {
 void editor_draw_rows(append_buffer * ab) {
     int y;
     for(y = 0; y < E.screen_rows; y++) {
-        if(y == E.screen_rows / 3) {
-            char welcome[80];
-            int welcome_len = snprintf(welcome, sizeof(welcome), "Ben's TE -- version %s", VERSION);
-            // truncate if too long
-            if(welcome_len > E.screen_cols) {
-                welcome_len = E.screen_cols;
+        int file_row = y + E.row_offset;
+        if(file_row >= E.num_rows) {
+            // check if we're currently drawing a row that is part of the text buffer
+            if(y >= E.num_rows) {
+                if(E.num_rows == 0 && y == E.screen_rows / 3) {
+                    char welcome[80];
+                    int welcome_len = snprintf(welcome, sizeof(welcome), "Ben's TE -- version %s", VERSION);
+                    // truncate if too long
+                    if(welcome_len > E.screen_cols) {
+                        welcome_len = E.screen_cols;
+                    }
+                    int padding = (E.screen_cols - welcome_len) / 2;
+                    if(padding) {
+                        ab_append(ab, "~", 1);
+                        padding--;
+                    } 
+                    while(padding--) {
+                        ab_append(ab, " ", 1);
+                    }
+                    ab_append(ab, welcome, welcome_len);
+                }
+                else {
+                    ab_append(ab, "~", 1);
+                }
             }
-            int padding = (E.screen_cols - welcome_len) / 2;
-            if(padding) {
-                ab_append(ab, "~", 1);
-                padding--;
-            } 
-            while(padding--) {
-                ab_append(ab, " ", 1);
-            }
-            ab_append(ab, welcome, welcome_len);
         }
         else {
-            ab_append(ab, "~", 1);
+            int length = E.row[file_row].size - E.col_offset;
+            if(length < 0) {
+                length = 0;
+            }
+            if(length > E.screen_cols) {
+                length = E.screen_cols;
+            }
+            ab_append(ab, &E.row[file_row].chars[E.col_offset], length);
         }
 
         ab_append(ab, "\x1b[K", 3);
@@ -283,19 +318,61 @@ void die(const char *s) {
     exit(1);
 }
 
+// row operations
+
+void editor_append_row(char * s, size_t length) {
+    E.row = realloc(E.row, sizeof(editor_row) * (E.num_rows + 1));
+
+    int at = E.num_rows;
+    E.row[at].size = length;
+    E.row[at].chars = malloc(length + 1);
+    memcpy(E.row[at].chars, s, length);
+    E.row[at].chars[length] = '\0';
+    E.num_rows++;
+}
+
+// file i/o
+
+void editor_open(char * file_name) {
+    FILE * fp = fopen(file_name, "r");
+    if(!fp) {
+        die("fopen");
+    }
+
+    char * line = NULL;
+    size_t line_cap = 0;
+    ssize_t line_length;
+    line_length = getline(&line, &line_cap, fp);
+    while((line_length = getline(&line, &line_cap, fp)) != -1) {
+        while(line_length > 0 && (line[line_length - 1] == '\n' || line[line_length - 1] == '\r')) {
+            line_length--;
+        }
+        editor_append_row(line, line_length);
+    }
+    free(line);
+    fclose(fp);
+}
+
 // initialization
 
 void init_editor() {
     E.cx = 0;
     E.cy = 0;
+    E.row_offset = 0;
+    E.col_offset = 0;
+    E.num_rows = 0;
+    E.row = NULL;
     if(get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
         die("get_window_size");
     }
 }
 
-int main() {
+int main(int argc, char * argv[]) {
     enable_raw_mode();
     init_editor();
+    if(argc >= 2) {
+        editor_open(argv[1]);
+    }
 
     // reads user input until a q is seen
     while(1) {

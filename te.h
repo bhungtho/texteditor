@@ -7,11 +7,16 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <string.h>
+#include <sys/types.h>
 
 //defines
 #define VERSION "0.0.1"
 #define CTRL_KEY(k) ((k) & 0x1f)    // strips top three bits
 #define ABUF_INIT {NULL, 0}         // append_buffer constructor
+// feature test macros
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
 
 // enums
 enum editorKey {
@@ -27,11 +32,20 @@ enum editorKey {
 };
 
 // structure definitions
+typedef struct editor_row {
+    int size;
+    char * chars;
+} editor_row;
+
 typedef struct editor_config {
     int cx;
     int cy;
+    int row_offset;
+    int col_offset;
     int screen_rows;
     int screen_cols;
+    int num_rows;
+    editor_row  * row;
     struct termios orig_termios;
 } editor_config;
 
@@ -57,12 +71,19 @@ void die(const char *s);        // error function
 int get_window_size(int * rows, int * cols);
 
 // output
+void editor_scroll();
 void editor_refresh_screen();
 void editor_draw_rows();
 
 // input
 void editor_move_cursor(int key);
 void editor_process_keypress(); // wait for a keypress and handle it
+
+// row operations
+void editor_append_row(char * s, size_t length);
+
+// file i/o
+void editor_open();
 
 // init
 void init_editor();
