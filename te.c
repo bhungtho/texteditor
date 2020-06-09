@@ -20,14 +20,26 @@ void ab_free(append_buffer * ab) {
 // input
 
 void editor_move_cursor(int key) {
+    editor_row * row = (E.cy >= E.num_rows) ? NULL : &E.row[E.cy];
+
     switch(key) {
         case ARROW_LEFT:
             if(E.cx != 0) {
                 E.cx--;
             }
+            else if(E.cy > 0) {
+                E.cy--;
+                E.cx = E.row[E.cy].size;
+            }
             break;
         case ARROW_RIGHT:
+            if(row && E.cx < row->size) {
                 E.cx++;
+            }
+            else if(row && E.cx == row->size) {
+                E.cy++;
+                E.cx = 0;
+            }
             break;
         case ARROW_UP:
             if(E.cy != 0) {
@@ -39,6 +51,12 @@ void editor_move_cursor(int key) {
                 E.cy++;
             }
             break;
+    }
+
+    row = (E.cy >= E.num_rows) ? NULL : &E.row[E.cy];
+    int row_length = row ? row->size: 0;
+    if(E.cx > row_length) {
+        E.cx = row_length;
     }
 }
 
@@ -55,11 +73,22 @@ void editor_process_keypress() {
             E.cx = 0;
             break;
         case END_KEY:
-            E.cx = E.screen_cols - 1;
+            if(E.cy < E.num_rows) {
+                E.cx = E.row[E.cy].size;
+            }
             break;
         case PAGE_UP:
         case PAGE_DOWN:
         {
+            if(c == PAGE_UP) {
+                E.cy = E.row_offset;
+            }
+            else if(c == PAGE_DOWN) {
+                E.cy = E.row_offset + E.screen_rows - 1;
+                if(E.cy > E.num_rows) {
+                    E.cy = E.num_rows;
+                }
+            }
             int times = E.screen_rows;
             while(times--) {
                 editor_move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -77,7 +106,58 @@ void editor_process_keypress() {
 
 // output
 
+void editor_draw_message_bar(append_buffer * ab) {
+    ab_append(ab, "\x1b[K", 3);
+    int msg_length = strlen(E.status_msg);
+    if(msg_length > E.screen_cols) {
+        msg_length = E.screen_cols;
+    }
+    if(msg_length && time(NULL) - E.status_time < 5) {
+        ab_append(ab, E.status_msg, msg_length);
+    }
+}
+
+void editor_set_status(const char * fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(E.status_msg, sizeof(E.status_msg), fmt, ap);
+    va_end(ap);
+    E.status_time = time(NULL);
+}
+
+void editor_draw_status_bar(append_buffer * ab) {
+    // invert colors
+    ab_append(ab, "\x1b[7m", 4);
+    
+    char status[80];
+    char r_status[80];
+    int length = snprintf(status, sizeof(status), "%.20s - %d lines", E.file_name ? E.file_name : "[No Name]", E.num_rows);
+    int r_length = snprintf(r_status, sizeof(r_status), "%d/%d", E.cy + 1, E.num_rows);
+    
+    if(length > E.screen_cols) {
+        length = E.screen_cols;
+    }
+    ab_append(ab, status, length);
+    while(length < E.screen_cols) {
+        if(E.screen_cols - length == r_length) {
+            ab_append(ab, r_status, r_length);
+            break;
+        }
+        else {
+            ab_append(ab, " ", 1);
+            length++;
+        }
+    }
+    // revert back to original colors
+    ab_append(ab, "\x1b[m", 3);
+    ab_append(ab, "\r\n", 2);
+}
+
 void editor_scroll() {
+    E.rx = 0;
+    if(E.cy < E.num_rows) {
+        E.rx = cx_to_rx(&E.row[E.cy], E.cx);
+    }
     // if cursor above visible window
     if(E.cy < E.row_offset) {
         E.row_offset = E.cy;
@@ -88,12 +168,12 @@ void editor_scroll() {
     }
 
     // if cursor left of visible window
-    if(E.cx < E.col_offset) {
-        E.col_offset = E.cx;
+    if(E.rx < E.col_offset) {
+        E.col_offset = E.rx;
     }
     // if cursor right of visible window
-    if(E.cx >= E.col_offset + E.screen_cols) {
-        E.col_offset = E.cx - E.screen_cols + 1;
+    if(E.rx >= E.col_offset + E.screen_cols) {
+        E.col_offset = E.rx - E.screen_cols + 1;
     }
 }
 
@@ -107,10 +187,12 @@ void editor_refresh_screen() {
     ab_append(&ab, "\x1b[H", 3);
 
     editor_draw_rows(&ab);
+    editor_draw_status_bar(&ab);
+    editor_draw_message_bar(&ab);
 
     // move cursor to (cx, cy)
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.row_offset + 1, E.cx - E.col_offset + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.row_offset + 1, E.rx - E.col_offset + 1);
     ab_append(&ab, buf, strlen(buf));
 
     //ab_append(&ab, "\x1b[H", 3);
@@ -152,20 +234,20 @@ void editor_draw_rows(append_buffer * ab) {
             }
         }
         else {
-            int length = E.row[file_row].size - E.col_offset;
+            int length = E.row[file_row].r_size - E.col_offset;
             if(length < 0) {
                 length = 0;
             }
             if(length > E.screen_cols) {
                 length = E.screen_cols;
             }
-            ab_append(ab, &E.row[file_row].chars[E.col_offset], length);
+            ab_append(ab, &E.row[file_row].render[E.col_offset], length);
         }
 
         ab_append(ab, "\x1b[K", 3);
-        if(y < E.screen_rows - 1) {
+        //if(y < E.screen_rows - 1) {
             ab_append(ab, "\r\n", 2);
-        }
+        //}
     }
 }
 
@@ -320,6 +402,45 @@ void die(const char *s) {
 
 // row operations
 
+int cx_to_rx(editor_row * row, int cx) {
+    int rx = 0;
+    int j;
+    for(j = 0; j < cx; j++) {
+        if(row->chars[j] == '\t') {
+            rx += (TAB_STOP - 1) - (rx % TAB_STOP);
+        }
+        rx++;
+    }
+    return rx;
+}
+
+void editor_update_row(editor_row * row) {
+    int tabs = 0;
+    int j;
+    for(j = 0; j < row->size; j++) {
+        if(row->chars[j] == '\t') {
+            tabs++;
+        }
+    }
+    free(row->render);
+    row->render = malloc(row->size + tabs * (TAB_STOP - 1) + 1);
+
+    int index = 0;
+    for(j = 0; j < row->size; j++) {
+        if(row->chars[j] == '\t') {
+            row->render[index++] = ' ';
+            while(index % TAB_STOP != 0) {
+                row->render[index++] = ' ';
+            }
+        }
+        else {
+            row->render[index++] = row->chars[j];
+        }
+    }
+    row->render[index] = '\0';
+    row->r_size = index;
+}
+
 void editor_append_row(char * s, size_t length) {
     E.row = realloc(E.row, sizeof(editor_row) * (E.num_rows + 1));
 
@@ -328,12 +449,20 @@ void editor_append_row(char * s, size_t length) {
     E.row[at].chars = malloc(length + 1);
     memcpy(E.row[at].chars, s, length);
     E.row[at].chars[length] = '\0';
+
+    E.row[at].r_size = 0;
+    E.row[at].render = NULL;
+    editor_update_row(&E.row[at]);
+
     E.num_rows++;
 }
 
 // file i/o
 
 void editor_open(char * file_name) {
+    free(E.file_name);
+    E.file_name = strdup(file_name);
+
     FILE * fp = fopen(file_name, "r");
     if(!fp) {
         die("fopen");
@@ -358,13 +487,19 @@ void editor_open(char * file_name) {
 void init_editor() {
     E.cx = 0;
     E.cy = 0;
+    E.rx = 0;
     E.row_offset = 0;
     E.col_offset = 0;
     E.num_rows = 0;
     E.row = NULL;
+    E.file_name = NULL;
+    E.status_msg[0] = '\0';
+    E.status_time = 0;
+
     if(get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
         die("get_window_size");
     }
+    E.screen_rows -= 2;
 }
 
 int main(int argc, char * argv[]) {
@@ -373,6 +508,8 @@ int main(int argc, char * argv[]) {
     if(argc >= 2) {
         editor_open(argv[1]);
     }
+
+    editor_set_status("HELP: Ctrl-Q = quit");
 
     // reads user input until a q is seen
     while(1) {
