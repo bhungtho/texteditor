@@ -1,6 +1,17 @@
 #include "te.h"
 
-// append buffer
+/* editor operations */
+
+void editor_insert_char(int c) {
+    // if at right end of file, need to append another row
+    if(E.cy == E.num_rows) {
+        editor_append_row("", 0);
+    }
+    editor_row_insert_char(&E.row[E.cy], E.cx, c);
+    E.cx++;
+}
+
+/* append buffer */
 
 void ab_append(append_buffer * ab, const char * s, int len) {
     char * new = realloc(ab->b, ab->len + len);
@@ -17,7 +28,7 @@ void ab_free(append_buffer * ab) {
     free(ab->b);
 }
 
-// input
+/* input */
 
 void editor_move_cursor(int key) {
     editor_row * row = (E.cy >= E.num_rows) ? NULL : &E.row[E.cy];
@@ -64,6 +75,8 @@ void editor_process_keypress() {
     int c = editor_read_key();
 
     switch(c) {
+        case '\r':
+            break;
         case CTRL_KEY('q'):
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[H", 3);
@@ -76,6 +89,10 @@ void editor_process_keypress() {
             if(E.cy < E.num_rows) {
                 E.cx = E.row[E.cy].size;
             }
+            break;
+        case BACKSPACE:
+        case CTRL_KEY('h'):
+        case DEL_KEY:
             break;
         case PAGE_UP:
         case PAGE_DOWN:
@@ -101,10 +118,16 @@ void editor_process_keypress() {
         case ARROW_RIGHT:
             editor_move_cursor(c);
             break;
+        case CTRL_KEY('l'):
+        case '\x1b':
+            break;
+        default:
+            editor_insert_char(c);
+            break;
     }
 }
 
-// output
+/* output */
 
 void editor_draw_message_bar(append_buffer * ab) {
     ab_append(ab, "\x1b[K", 3);
@@ -251,7 +274,7 @@ void editor_draw_rows(append_buffer * ab) {
     }
 }
 
-// terminal
+/* terminal */
 
 int get_window_size(int * rows, int * cols) {
     struct winsize ws;
@@ -400,7 +423,24 @@ void die(const char *s) {
     exit(1);
 }
 
-// row operations
+/* row operations */
+
+void editor_row_insert_char(editor_row * row, int at, int c) {
+    // check if at is valid
+    if(at < 0 || at > row->size) {
+        at = row->size;
+    }
+
+    // make room for one more byte for chars + null byte
+    row->chars = realloc(row->chars, row->size + 2);
+    // make room for new char
+    memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+    row->size++;
+    // insert char
+    row->chars[at] = c;
+    // update row
+    editor_update_row(row);
+}
 
 int cx_to_rx(editor_row * row, int cx) {
     int rx = 0;
@@ -457,7 +497,7 @@ void editor_append_row(char * s, size_t length) {
     E.num_rows++;
 }
 
-// file i/o
+/* file i/o */
 
 void editor_open(char * file_name) {
     free(E.file_name);
@@ -482,7 +522,7 @@ void editor_open(char * file_name) {
     fclose(fp);
 }
 
-// initialization
+/* initialization */
 
 void init_editor() {
     E.cx = 0;

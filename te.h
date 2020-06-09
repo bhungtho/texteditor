@@ -27,7 +27,8 @@
 /* enums */
 
 // key presses
-enum editorKey {
+enum editor_key {
+    BACKSPACE = 127,
     ARROW_LEFT = 1000,
     ARROW_RIGHT,
     ARROW_UP,
@@ -77,6 +78,10 @@ typedef struct append_buffer {
 editor_config E;    // our editor
 
 /* function declarations */
+
+//editor operations
+
+void editor_insert_char(int c);
 
 // append buffer
 void ab_append(append_buffer * ab, const char * s, int len);    // add to our buffer
