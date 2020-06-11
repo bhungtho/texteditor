@@ -1,5 +1,6 @@
 /* defines */
 
+#define QUIT_TIMES 3
 #define VERSION "0.0.1"
 #define TAB_STOP 8
 #define CTRL_KEY(k) ((k) & 0x1f)    // strips top three bits
@@ -23,6 +24,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <stdarg.h>
+#include <fcntl.h>
 
 /* enums */
 
@@ -61,6 +63,7 @@ typedef struct editor_config {
     int screen_cols;                // number of columns of the screen
     int num_rows;                   // number of rows in the file
     editor_row  * row;              // array of editor_rows that hold the text
+    int dirty;                      // dirty flag
     char * file_name;               // name of the file
     char status_msg[80];            // status message
     time_t status_time;             // status time
@@ -79,8 +82,9 @@ editor_config E;    // our editor
 
 /* function declarations */
 
-//editor operations
-
+// editor operations
+void editor_insert_new_line();
+void editor_delete_char();
 void editor_insert_char(int c);
 
 // append buffer
@@ -107,12 +111,19 @@ void editor_move_cursor(int key);   // move the cursor on the screen
 void editor_process_keypress();     // wait for a keypress and handle it
 
 // row operations
+void editor_row_append_string(editor_row * row, char * s, size_t length);
+void editor_free_row(editor_row * row);
+void editor_delete_row(int at);
+void editor_row_delete_char(editor_row * row, int at);
+void editor_row_insert_char(editor_row * row, int at, int c);
 int cx_to_rx(editor_row * row, int cx);           // converts cx to rx
 void editor_update_row(editor_row * row);         // updates the specified row
-void editor_append_row(char * s, size_t length);  // appends the row to the screen
+void editor_insert_row(int at, char * s, size_t length);  // appends the row to the screen
 
 // file i/o
-void editor_open(); // opens the terminal to the editor
+void editor_save();                                 // saves the file
+void editor_open();                                 // opens the terminal to the editor
+char * editor_rows_to_string(int * buffer_length);  // converts array of editor_row into a single string
 
 // init
 void init_editor(); // initializes the editor
