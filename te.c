@@ -67,6 +67,45 @@ void ab_free(append_buffer * ab) {
 
 /* input */
 
+char * editor_prompt(char * prompt) {
+    size_t buffer_size = 128;
+    char * buffer = malloc(buffer_size);
+
+    size_t buffer_length = 0;
+    buffer[0] = '\0';
+
+    while(1) {
+        editor_set_status(prompt, buffer);
+        editor_refresh_screen();
+
+        int c = editor_read_key();
+        if(c == DEL_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
+            if(buffer_length != 0) {
+                buffer[--buffer_length] = '\0';
+            }
+        }
+        else if(c == '\x1b') {
+            editor_set_status("");
+            free(buffer);
+            return NULL;
+        }
+        else if(c == '\r') {
+            if(buffer_length != 0) {
+                editor_set_status("");
+                return buffer;
+            }
+        }
+        else if(!iscntrl(c) && c < 128) {
+            if(buffer_length == buffer_size - 1) {
+                buffer_size *= 2;
+                buffer = realloc(buffer, buffer_size);
+            }
+            buffer[buffer_length++] = c;
+            buffer[buffer_length] = '\0';
+        }
+    }
+}
+
 void editor_move_cursor(int key) {
     editor_row * row = (E.cy >= E.num_rows) ? NULL : &E.row[E.cy];
 
@@ -594,7 +633,11 @@ void editor_insert_row(int at, char * s, size_t length) {
 
 void editor_save() {
     if(E.file_name == NULL) {
-        return;
+        E.file_name = editor_prompt("Save as: %s (ESC to cancel)");
+        if(E.file_name == NULL) {
+            editor_set_status("Save aborted");
+            return;
+        }
     }
 
     int length;
