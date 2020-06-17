@@ -1,5 +1,29 @@
 #include "te.h"
 
+/* find */
+
+void editor_find() {
+    char * query = editor_prompt("Search: %s (ESC to cancel)");
+    if(query == NULL) {
+        return;
+    }
+
+    int i;
+    for(i = 0; i < E.num_rows; i++) {
+        editor_row * row = &E.row[i];
+        // check if query is a substring of the current row
+        char * match = strstr(row->render, query);
+        if(match) {
+            E.cy = i;
+            E.cx = rx_to_cx(row, match - row->render);
+            E.row_offset = E.num_rows;
+            break;
+        }
+    }
+
+    free(query);
+}
+
 /* editor operations */
 
 void editor_insert_new_line() {
@@ -177,6 +201,9 @@ void editor_process_keypress() {
             if(E.cy < E.num_rows) {
                 E.cx = E.row[E.cy].size;
             }
+            break;
+        case CTRL_KEY('f'):
+            editor_find();
             break;
         case BACKSPACE:
         case CTRL_KEY('h'):
@@ -582,6 +609,21 @@ int cx_to_rx(editor_row * row, int cx) {
     return rx;
 }
 
+int rx_to_cx(editor_row * row, int rx) {
+    int current_rx = 0;
+    int cx;
+    for(cx = 0; cx < row->size; cx++) {
+        if(row->chars[cx] == '\t') {
+            current_rx += (TAB_STOP - 1) - (current_rx % TAB_STOP);
+        }
+        current_rx++;
+    }
+    if(current_rx > rx) {
+        return cx;
+    }
+    return cx;
+}
+
 void editor_update_row(editor_row * row) {
     int tabs = 0;
     int j;
@@ -736,7 +778,7 @@ int main(int argc, char * argv[]) {
         editor_open(argv[1]);
     }
 
-    editor_set_status("HELP: Ctrl-S = save | Ctrl-Q = quit");
+    editor_set_status("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
 
     // reads user input until a q is seen
     while(1) {

@@ -82,6 +82,9 @@ editor_config E;    // our editor
 
 /* function declarations */
 
+// find
+void editor_find();
+
 // editor operations
 void editor_insert_new_line();
 void editor_delete_char();
@@ -118,6 +121,7 @@ void editor_delete_row(int at);
 void editor_row_delete_char(editor_row * row, int at);
 void editor_row_insert_char(editor_row * row, int at, int c);
 int cx_to_rx(editor_row * row, int cx);           // converts cx to rx
+int rx_to_cx(editor_row * row, int rx);
 void editor_update_row(editor_row * row);         // updates the specified row
 void editor_insert_row(int at, char * s, size_t length);  // appends the row to the screen
 
