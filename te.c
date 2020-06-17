@@ -2,26 +2,68 @@
 
 /* find */
 
-void editor_find() {
-    char * query = editor_prompt("Search: %s (ESC to cancel)");
-    if(query == NULL) {
+void editor_find_callback(char * query, int key) {
+    static int last_match = -1;     // index of the row the last match was on
+    static int direction = 11;      // 1 if searching forward, -1 if searching backwards
+
+    if(key == '\r' || key == '\x1b') {
+        last_match = -1;
+        direction = 1;
         return;
     }
+    else if(key == ARROW_RIGHT || key == ARROW_DOWN) {
+        direction = 1;
+    }
+    else if(key == ARROW_LEFT || key == ARROW_UP) {
+        direction = -1;
+    }
+    else {
+        last_match = -1;
+        direction = 1;
+    }
 
+    if(last_match == -1) {
+        direction = 1;
+    }
+    int current = last_match;   // index of the current row we're searching
     int i;
     for(i = 0; i < E.num_rows; i++) {
-        editor_row * row = &E.row[i];
+        current += direction;
+        if(current == -1) {
+            current = E.num_rows - 1;
+        }
+        else if(current == E.num_rows) {
+            current = 0;
+        }        
+        editor_row * row = &E.row[current];
         // check if query is a substring of the current row
         char * match = strstr(row->render, query);
         if(match) {
-            E.cy = i;
+            last_match = current;
+            E.cy = current;
             E.cx = rx_to_cx(row, match - row->render);
             E.row_offset = E.num_rows;
             break;
         }
     }
+}
 
-    free(query);
+void editor_find() {
+    int saved_cx = E.cx;
+    int saved_cy = E.cy;
+    int saved_col_offset = E.col_offset;
+    int saved_row_offset = E.row_offset;
+
+    char * query = editor_prompt("Search: %s (Use ESC/Arrows/Enter)", editor_find_callback);
+    if(query) {
+        free(query);
+    }
+    else {
+        E.cx = saved_cx;
+        E.cy = saved_cy;
+        E.col_offset = saved_col_offset;
+        E.row_offset = saved_row_offset;
+    }
 }
 
 /* editor operations */
@@ -91,7 +133,7 @@ void ab_free(append_buffer * ab) {
 
 /* input */
 
-char * editor_prompt(char * prompt) {
+char * editor_prompt(char * prompt, void (* callback)(char *, int)) {
     size_t buffer_size = 128;
     char * buffer = malloc(buffer_size);
 
@@ -110,12 +152,18 @@ char * editor_prompt(char * prompt) {
         }
         else if(c == '\x1b') {
             editor_set_status("");
+            if(callback) {
+                callback(buffer, c);
+            }
             free(buffer);
             return NULL;
         }
         else if(c == '\r') {
             if(buffer_length != 0) {
                 editor_set_status("");
+                if(callback) {
+                    callback(buffer, c);
+                }
                 return buffer;
             }
         }
@@ -126,6 +174,9 @@ char * editor_prompt(char * prompt) {
             }
             buffer[buffer_length++] = c;
             buffer[buffer_length] = '\0';
+        }
+        if(callback) {
+            callback(buffer, c);
         }
     }
 }
@@ -675,7 +726,7 @@ void editor_insert_row(int at, char * s, size_t length) {
 
 void editor_save() {
     if(E.file_name == NULL) {
-        E.file_name = editor_prompt("Save as: %s (ESC to cancel)");
+        E.file_name = editor_prompt("Save as: %s (ESC to cancel)", NULL);
         if(E.file_name == NULL) {
             editor_set_status("Save aborted");
             return;
