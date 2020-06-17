@@ -3,6 +3,8 @@
 #define QUIT_TIMES 3
 #define VERSION "0.0.1"
 #define TAB_STOP 8
+#define HL_HIGHLIGHT_NUMBERS (1 << 0)
+#define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 #define CTRL_KEY(k) ((k) & 0x1f)    // strips top three bits
 #define ABUF_INIT {NULL, 0}         // append_buffer constructor
 // feature test macros
@@ -42,17 +44,31 @@ enum editor_key {
     PAGE_DOWN
 };
 
+// highlights
+enum editor_highlight {
+    HL_NORMAL = 0,
+    HL_NUMBER,
+    HL_MATCH
+};
+
 /* structure definitions */
 
 // one row of text
 typedef struct editor_row {
-    int size;       // size of the row
-    int r_size;     // size of the render
-    char * chars;   // text
-    char * render;  // render text
+    int size;           // size of the row
+    int r_size;         // size of the render
+    char * chars;       // text
+    char * render;      // render text
+    unsigned char * hl; // highlight of the line
 } editor_row;
 
 // editor variables
+typedef struct editor_syntax {
+    char * file_type;       // name of the filetype that will be displayed
+    char ** file_match;     // array of file-type patterns
+    int flags;
+} editor_syntax;
+
 typedef struct editor_config {
     int cx;                         // cursor x location
     int cy;                         // cursor y location
@@ -67,6 +83,7 @@ typedef struct editor_config {
     char * file_name;               // name of the file
     char status_msg[80];            // status message
     time_t status_time;             // status time
+    editor_syntax * syntax;
     struct termios orig_termios;    // holds flags for the terminal
 } editor_config;
 
@@ -77,10 +94,16 @@ typedef struct append_buffer {
 } append_buffer;
 
 /* variables */
-
+char * C_HL_extensions[] = { ".c", ".h", ".cpp", NULL};
 editor_config E;    // our editor
+editor_syntax HLDB[] = {{"c", C_HL_extensions, HL_HIGHLIGHT_NUMBERS},};     // HIGHLIGHT DATABASE
 
 /* function declarations */
+
+// syntax highlighting
+void editor_select_syntax_highlight();
+int editor_syntax_to_color(int hl);
+void editor_update_syntax(editor_row * row);
 
 // find
 void editor_find_callback(char * query, int key);

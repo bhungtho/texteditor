@@ -1,10 +1,90 @@
 #include "te.h"
 
+/* syntax highlighting */
+
+void editor_select_syntax_highlight() {
+    E.syntax = NULL;
+    if(E.file_name == NULL) {
+        return;
+    }
+
+    char * ext = strrchr(E.file_name, '.');
+
+    for(unsigned int j = 0; j < HLDB_ENTRIES; j++) {
+        editor_syntax * s = &HLDB[j];
+        unsigned int i = 0;
+        while(s->file_match[i]) {
+            int is_ext = (s->file_match[i][0] == '.');
+            if((is_ext && strstr(E.file_name, s->file_match[i]))) {
+                E.syntax = s;
+                int file_row;
+                for(file_row = 0; file_row < E.num_rows; file_row++) {
+                    editor_update_syntax(&E.row[file_row]);
+                }
+                return;
+            }
+            i++;
+        }
+    }
+}
+
+int is_separator(int c) {
+    return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL;
+}
+
+int editor_syntax_to_color(int hl) {
+    switch(hl) {
+        case HL_NUMBER: 
+            return 31;
+        case HL_MATCH:
+            return 34;
+        default: 
+            return 37;
+    }
+}
+
+void editor_update_syntax(editor_row * row) {
+    row->hl = realloc(row->hl, row->r_size);
+    memset(row->hl, HL_NORMAL, row->r_size);
+
+    if(E.syntax == NULL) {
+        return;
+    }
+
+    int prev_sep = 1;
+
+    int i = 0;
+    while (i < row->r_size) {
+        char c = row->render[i];
+        unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+
+        if(E.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
+            if((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) || (c == '.' && prev_hl == HL_NUMBER)) {
+                row->hl[i] = HL_NUMBER;
+                i++;
+                prev_sep = 0;
+                continue;
+            }
+        }
+        prev_sep = is_separator(c);
+        i++;
+    }
+}
+
 /* find */
 
 void editor_find_callback(char * query, int key) {
     static int last_match = -1;     // index of the row the last match was on
-    static int direction = 11;      // 1 if searching forward, -1 if searching backwards
+    static int direction = 1;      // 1 if searching forward, -1 if searching backwards
+
+    static int saved_hl_line;
+    static char * saved_hl = NULL;
+
+    if(saved_hl) {
+        memcpy(E.row[saved_hl_line].hl, saved_hl, E.row[saved_hl_line].r_size);
+        free(saved_hl);
+        saved_hl = NULL;
+    }
 
     if(key == '\r' || key == '\x1b') {
         last_match = -1;
@@ -43,6 +123,13 @@ void editor_find_callback(char * query, int key) {
             E.cy = current;
             E.cx = rx_to_cx(row, match - row->render);
             E.row_offset = E.num_rows;
+
+            // save previous highlighting
+            saved_hl_line = current;
+            saved_hl = malloc(row->r_size);
+            memcpy(saved_hl, row->hl, row->r_size);
+            // syntax highlighting
+            memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
             break;
         }
     }
@@ -326,7 +413,7 @@ void editor_draw_status_bar(append_buffer * ab) {
     char status[80];
     char r_status[80];
     int length = snprintf(status, sizeof(status), "%.20s - %d lines %s", E.file_name ? E.file_name : "[No Name]", E.num_rows, E.dirty ? "(modified)" : "");
-    int r_length = snprintf(r_status, sizeof(r_status), "%d/%d", E.cy + 1, E.num_rows);
+    int r_length = snprintf(r_status, sizeof(r_status), "%s | %d/%d", E.syntax ? E.syntax->file_type : "no ft", E.cy + 1, E.num_rows);
     
     if(length > E.screen_cols) {
         length = E.screen_cols;
@@ -435,7 +522,30 @@ void editor_draw_rows(append_buffer * ab) {
             if(length > E.screen_cols) {
                 length = E.screen_cols;
             }
-            ab_append(ab, &E.row[file_row].render[E.col_offset], length);
+            char * c = &E.row[file_row].render[E.col_offset];
+            unsigned char * hl = &E.row[file_row].hl[E.col_offset];
+            int current_color = -1;
+            int j;
+            for(j = 0; j < length; j++) {
+                if(hl[j] == HL_NORMAL) {
+                    if(current_color != -1) {
+                        ab_append(ab, "\x1b[39m", 5);
+                        current_color = -1;
+                    }
+                    ab_append(ab, &c[j], 1);
+                }
+                else {
+                    int color = editor_syntax_to_color(hl[j]);
+                    if(color != current_color) {
+                        current_color = color;
+                        char buf[16];
+                        int c_length = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
+                        ab_append(ab, buf, c_length);
+                    }
+                    ab_append(ab, &c[j], 1);
+                }
+            }
+            ab_append(ab, "\x1b[39m", 5);
         }
 
         ab_append(ab, "\x1b[K", 3);
@@ -608,6 +718,7 @@ void editor_row_append_string(editor_row * row, char * s, size_t length) {
 void editor_free_row(editor_row * row) {
     free(row->render);
     free(row->chars);
+    free(row->hl);
 }
 
 void editor_delete_row(int at) {
@@ -700,6 +811,8 @@ void editor_update_row(editor_row * row) {
     }
     row->render[index] = '\0';
     row->r_size = index;
+
+    editor_update_syntax(row);
 }
 
 void editor_insert_row(int at, char * s, size_t length) {
@@ -716,6 +829,7 @@ void editor_insert_row(int at, char * s, size_t length) {
 
     E.row[at].r_size = 0;
     E.row[at].render = NULL;
+    E.row[at].hl = NULL;
     editor_update_row(&E.row[at]);
 
     E.num_rows++;
@@ -731,6 +845,7 @@ void editor_save() {
             editor_set_status("Save aborted");
             return;
         }
+        editor_select_syntax_highlight();
     }
 
     int length;
@@ -781,6 +896,8 @@ void editor_open(char * file_name) {
     free(E.file_name);
     E.file_name = strdup(file_name);
 
+    editor_select_syntax_highlight();
+
     FILE * fp = fopen(file_name, "r");
     if(!fp) {
         die("fopen");
@@ -815,6 +932,7 @@ void init_editor() {
     E.file_name = NULL;
     E.status_msg[0] = '\0';
     E.status_time = 0;
+    E.syntax = NULL;
 
     if(get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
         die("get_window_size");
