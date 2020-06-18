@@ -49,6 +49,7 @@ enum editor_key {
 enum editor_highlight {
     HL_NORMAL = 0,
     HL_COMMENT,
+    HL_MLCOMMENT,
     HL_KEYWORD1,
     HL_KEYWORD2,
     HL_STRING,
@@ -60,11 +61,13 @@ enum editor_highlight {
 
 // one row of text
 typedef struct editor_row {
+    int index;          // index within the file
     int size;           // size of the row
     int r_size;         // size of the render
     char * chars;       // text
     char * render;      // render text
     unsigned char * hl; // highlight of the line
+    int hl_open_comment;// if the row is part of a multi-line comment
 } editor_row;
 
 // editor variables
@@ -73,6 +76,8 @@ typedef struct editor_syntax {
     char ** file_match;     // array of file-type patterns
     char ** keywords;       // array of language-specific keywords
     char * singleline_comment_start;
+    char * multiline_comment_start;
+    char * multiline_comment_end;
     int flags;
 } editor_syntax;
 
@@ -104,7 +109,7 @@ typedef struct append_buffer {
 char * C_HL_extensions[] = { ".c", ".h", ".cpp", NULL};
 char * C_HL_keywords[] = {"switch", "if", "while", "for", "break", "continue", "return", "else", "struct", "union", "typedef", "static", "enum", "class", "case", "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|", "void|", NULL};
 editor_config E;    // our editor
-editor_syntax HLDB[] = {{"c", C_HL_extensions, C_HL_keywords, "//", HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},};     // HIGHLIGHT DATABASE
+editor_syntax HLDB[] = {{"c", C_HL_extensions, C_HL_keywords, "//", "/*", "*/", HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},};     // HIGHLIGHT DATABASE
 
 /* function declarations */
 

@@ -35,6 +35,7 @@ int is_separator(int c) {
 int editor_syntax_to_color(int hl) {
     switch(hl) {
         case HL_COMMENT:
+        case HL_MLCOMMENT:
             // cyan
             return 36;
         case HL_KEYWORD1:
@@ -69,20 +70,48 @@ void editor_update_syntax(editor_row * row) {
 
     // alias set-up
     char * scs = E.syntax->singleline_comment_start;
+    char * mcs = E.syntax->multiline_comment_start;
+    char * mce = E.syntax->multiline_comment_end;
+
     int scs_len = scs ? strlen(scs) : 0;
+    int mcs_len = mcs ? strlen(mcs) : 0;
+    int mce_len = mce ? strlen(mce) : 0;
 
     int prev_sep = 1;
     int in_string = 0;
+    int in_comment = (row->index > 0 && E.row[row->index - 1].hl_open_comment);
 
     int i = 0;
     while (i < row->r_size) {
         char c = row->render[i];
         unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
-        if(scs_len && !in_string) {
+        if(scs_len && !in_string && !in_comment) {
             if(!strncmp(&row->render[i], scs, scs_len)) {
                 memset(&row->hl[i], HL_COMMENT, row->r_size - i);
                 break;
+            }
+        }
+
+        if(mcs_len && mce_len && !in_string) {
+            if(in_comment) {
+                row->hl[i] = HL_MLCOMMENT;
+                if(!strncmp(&row->render[i], mce, mce_len)) {
+                    memset(&row->hl[i], HL_MLCOMMENT, mce_len);
+                    i += mce_len;
+                    in_comment = 0;
+                    prev_sep = 1;
+                    continue;
+                }
+                else {
+                    i++;
+                    continue;
+                }
+            }
+            else if(!strncmp(&row->render[i], mcs, mcs_len)) {
+                i += mcs_len;
+                in_comment = 1;
+                continue;
             }
         }
 
@@ -143,6 +172,12 @@ void editor_update_syntax(editor_row * row) {
         }
         prev_sep = is_separator(c);
         i++;
+    }
+
+    int changed = (row->hl_open_comment != in_comment);
+    row->hl_open_comment = in_comment;
+    if(changed && row->index + 1 < E.num_rows) {
+        editor_update_syntax(&E.row[row->index + 1]);
     }
 }
 
@@ -602,7 +637,18 @@ void editor_draw_rows(append_buffer * ab) {
             int current_color = -1;
             int j;
             for(j = 0; j < length; j++) {
-                if(hl[j] == HL_NORMAL) {
+                if(iscntrl(c[j])) {
+                    char sym = (c[j] <= 26) ? '@' + c[j] : '?';
+                    ab_append(ab, "\x1b[7m", 4);
+                    ab_append(ab, &sym, 1);
+                    ab_append(ab, "\x1b[m", 3);
+                    if(current_color != -1) {
+                        char buf[16];
+                        int c_len = snprintf(buf, sizeof(buf), "\x1b[%dm", current_color);
+                        ab_append(ab, buf, c_len);
+                    }
+                }
+                else if(hl[j] == HL_NORMAL) {
                     if(current_color != -1) {
                         ab_append(ab, "\x1b[39m", 5);
                         current_color = -1;
@@ -802,6 +848,10 @@ void editor_delete_row(int at) {
     }
     editor_free_row(&E.row[at]);
     memmove(&E.row[at], &E.row[at + 1], sizeof(editor_row) * (E.num_rows - at - 1));
+    for(int j = at; j < E.num_rows - 1; j++) {
+        E.row[j].index--;
+    }
+    
     E.num_rows--;
     E.dirty++;
 }
@@ -896,6 +946,11 @@ void editor_insert_row(int at, char * s, size_t length) {
     }
     E.row = realloc(E.row, sizeof(editor_row) * (E.num_rows + 1));
     memmove(&E.row[at + 1], &E.row[at], sizeof(editor_row) * (E.num_rows - at));
+    for(int j = at + 1; j <= E.num_rows; j++) {
+        E.row[j].index++;
+    }
+
+    E.row[at].index = at;
 
     E.row[at].size = length;
     E.row[at].chars = malloc(length + 1);
@@ -905,6 +960,7 @@ void editor_insert_row(int at, char * s, size_t length) {
     E.row[at].r_size = 0;
     E.row[at].render = NULL;
     E.row[at].hl = NULL;
+    E.row[at].hl_open_comment = 0;
     editor_update_row(&E.row[at]);
 
     E.num_rows++;
