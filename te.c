@@ -34,9 +34,23 @@ int is_separator(int c) {
 
 int editor_syntax_to_color(int hl) {
     switch(hl) {
+        case HL_COMMENT:
+            // cyan
+            return 36;
+        case HL_KEYWORD1:
+            // yellow
+            return 33;
+        case HL_KEYWORD2:
+            // green
+            return 32;
+        case HL_STRING:
+            // magenta
+            return 35;
         case HL_NUMBER: 
+            // red
             return 31;
         case HL_MATCH:
+            // blue
             return 34;
         default: 
             return 37;
@@ -51,17 +65,78 @@ void editor_update_syntax(editor_row * row) {
         return;
     }
 
+    char ** keywords = E.syntax->keywords;
+
+    // alias set-up
+    char * scs = E.syntax->singleline_comment_start;
+    int scs_len = scs ? strlen(scs) : 0;
+
     int prev_sep = 1;
+    int in_string = 0;
 
     int i = 0;
     while (i < row->r_size) {
         char c = row->render[i];
         unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
+        if(scs_len && !in_string) {
+            if(!strncmp(&row->render[i], scs, scs_len)) {
+                memset(&row->hl[i], HL_COMMENT, row->r_size - i);
+                break;
+            }
+        }
+
+        if(E.syntax->flags & HL_HIGHLIGHT_STRINGS) {
+            if(in_string) {
+                row->hl[i] = HL_STRING;
+                if(c == '\\' && i + 1 < row->r_size) {
+                    row->hl[i + 1] = HL_STRING;
+                    i += 2;
+                    continue;
+                }
+                if(c == in_string) {
+                    row->hl[i] = HL_NORMAL;
+                    in_string = 0;
+                }
+                i++;
+                prev_sep = 1;
+                continue;
+            }
+            else {
+                if(c == '"' || c == '\'') {
+                    in_string = c;
+                    row->hl[i] == HL_STRING;
+                    i++;
+                    continue;
+                }
+            }
+        }
+
         if(E.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
             if((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) || (c == '.' && prev_hl == HL_NUMBER)) {
                 row->hl[i] = HL_NUMBER;
                 i++;
+                prev_sep = 0;
+                continue;
+            }
+        }
+
+        if(prev_sep) {
+            int j = 0;
+            for(j = 0; keywords[j]; j++) {
+                int k_length = strlen(keywords[j]);
+                int kw2 = keywords[j][k_length - 1] == '|';
+                if(kw2) {
+                    k_length--;
+                }
+
+                if(!strncmp(&row->render[i], keywords[j], k_length) && is_separator(row->render[i + k_length])) {
+                    memset(&row->hl[i], kw2 ? HL_KEYWORD2 : HL_KEYWORD1, k_length);
+                    i += k_length;
+                    break;
+                }
+            }
+            if(keywords[j] != NULL) {
                 prev_sep = 0;
                 continue;
             }

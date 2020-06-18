@@ -4,6 +4,7 @@
 #define VERSION "0.0.1"
 #define TAB_STOP 8
 #define HL_HIGHLIGHT_NUMBERS (1 << 0)
+#define HL_HIGHLIGHT_STRINGS (1 << 1)
 #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 #define CTRL_KEY(k) ((k) & 0x1f)    // strips top three bits
 #define ABUF_INIT {NULL, 0}         // append_buffer constructor
@@ -47,6 +48,10 @@ enum editor_key {
 // highlights
 enum editor_highlight {
     HL_NORMAL = 0,
+    HL_COMMENT,
+    HL_KEYWORD1,
+    HL_KEYWORD2,
+    HL_STRING,
     HL_NUMBER,
     HL_MATCH
 };
@@ -66,6 +71,8 @@ typedef struct editor_row {
 typedef struct editor_syntax {
     char * file_type;       // name of the filetype that will be displayed
     char ** file_match;     // array of file-type patterns
+    char ** keywords;       // array of language-specific keywords
+    char * singleline_comment_start;
     int flags;
 } editor_syntax;
 
@@ -95,8 +102,9 @@ typedef struct append_buffer {
 
 /* variables */
 char * C_HL_extensions[] = { ".c", ".h", ".cpp", NULL};
+char * C_HL_keywords[] = {"switch", "if", "while", "for", "break", "continue", "return", "else", "struct", "union", "typedef", "static", "enum", "class", "case", "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|", "void|", NULL};
 editor_config E;    // our editor
-editor_syntax HLDB[] = {{"c", C_HL_extensions, HL_HIGHLIGHT_NUMBERS},};     // HIGHLIGHT DATABASE
+editor_syntax HLDB[] = {{"c", C_HL_extensions, C_HL_keywords, "//", HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},};     // HIGHLIGHT DATABASE
 
 /* function declarations */
 
